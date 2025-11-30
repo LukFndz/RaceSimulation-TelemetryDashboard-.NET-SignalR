@@ -18,9 +18,8 @@ Historical data from SQLite
 Separate charts: Speed, RPM, Throttle, Brake, Fuel, Tires
 
 # 🏁 Race Simulation
-Configurable laps
-Live progress & status (Idle / Running / Finished)
-Persistent state on page reload
+Live progress Based on FastF1 API
+
 
 # 🧱 Architecture
 Telemetry.Api – Web API + SignalR (controllers)
