@@ -1,0 +1,563 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Telemetry Dashboard</title>
+
+    <!-- SignalR (kept) + Chart.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --card: #15151d;
+            --muted: #9aa0a6;
+            --accent: #7ce6ff;
+            --gap: 20px;
+            --radius: 10px;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            background: var(--bg);
+            color: #e6eef3;
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            margin: 0 0 18px 0;
+            font-weight: 600;
+            color: var(--accent);
+            letter-spacing: 0.2px;
+        }
+
+        /* Grid layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0,1fr));
+            gap: var(--gap);
+            align-items: start;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 16px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+            min-height: 84px;
+        }
+
+            .card h2 {
+                margin: 0 0 10px 0;
+                font-size: 14px;
+                color: var(--accent);
+                font-weight: 600;
+            }
+
+        .metric {
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .metric-sub {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+
+        /* Full width charts */
+        .charts-row {
+            margin-top: 26px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: var(--gap);
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 180px !important;
+            display: block;
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+        }
+
+        /* History section */
+        .history {
+            margin-top: 28px;
+        }
+
+        .history-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: var(--gap);
+            margin-top: 12px;
+        }
+
+        /* responsive */
+        @media (max-width:1000px) {
+            .grid, .charts-row, .history-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            canvas {
+                height: 160px !important;
+            }
+        }
+
+        @media (max-width:640px) {
+            .grid, .charts-row, .history-grid {
+                grid-template-columns: 1fr;
+            }
+
+            canvas {
+                height: 140px !important;
+            }
+
+            .metric {
+                font-size: 22px;
+            }
+        }
+
+        /* small helpers */
+        .muted {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 8px 12px;
+            background: #006cff;
+            color: white;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Telemetry Dashboard</h1>
+
+    <!-- Numeric metrics (must remain numbers) -->
+    <div class="grid" role="region" aria-label="main-metrics">
+        <div class="card" id="card-speed">
+            <h2>Speed</h2>
+            <div class="metric" id="speed">0 km/h</div>
+            <div class="metric-sub muted">current speed</div>
+        </div>
+
+        <div class="card" id="card-rpm">
+            <h2>RPM</h2>
+            <div class="metric" id="rpm">0</div>
+            <div class="metric-sub muted">engine rpm</div>
+        </div>
+
+        <div class="card" id="card-gear">
+            <h2>Gear</h2>
+            <div class="metric" id="gear">N</div>
+            <div class="metric-sub muted">current gear</div>
+        </div>
+
+        <div class="card" id="card-throttle">
+            <h2>Throttle</h2>
+            <div class="metric" id="throttle">0%</div>
+            <div class="metric-sub muted">driver input</div>
+        </div>
+
+        <div class="card" id="card-brake">
+            <h2>Brake</h2>
+            <div class="metric" id="brake">0%</div>
+            <div class="metric-sub muted">brake input</div>
+        </div>
+
+        <div class="card" id="card-fuel">
+            <h2>Fuel</h2>
+            <div class="metric" id="fuel">0.0 kg</div>
+            <div class="metric-sub muted" id="drs">DRS: OFF</div>
+        </div>
+    </div>
+
+    <!-- Main charts row: Speed graph | RPM graph | Throttle/Brake (dual) -->
+    <div class="charts-row" role="region" aria-label="main-charts">
+        <div class="card">
+            <h2>Speed Graph</h2>
+            <canvas id="speedChart" aria-label="speed chart" role="img"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>RPM Graph</h2>
+            <canvas id="rpmChart" aria-label="rpm chart" role="img"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>Throttle / Brake</h2>
+            <canvas id="tbChart" aria-label="throttle brake chart" role="img"></canvas>
+        </div>
+    </div>
+
+    <!-- History / small charts -->
+    <section class="history" aria-label="history-charts">
+        <div class="row" style="justify-content:space-between; margin-bottom:10px;">
+            <div class="muted">History (live buffer + optional load)</div>
+            <div>
+                <button id="btnLoadHistory" class="btn">Load latest history</button>
+            </div>
+        </div>
+
+        <div class="history-grid">
+            <div class="card">
+                <h2>History Speed</h2>
+                <canvas id="speedHistory"></canvas>
+            </div>
+
+            <div class="card">
+                <h2>History Throttle</h2>
+                <canvas id="throttleHistory"></canvas>
+            </div>
+
+            <div class="card">
+                <h2>History Brake</h2>
+                <canvas id="brakeHistory"></canvas>
+            </div>
+
+            <div class="card">
+                <h2>History Fuel</h2>
+                <canvas id="fuelHistory"></canvas>
+            </div>
+
+            <div class="card">
+                <h2>Tires Front (FL / FR)</h2>
+                <canvas id="tiresFrontHistory"></canvas>
+            </div>
+
+            <div class="card">
+                <h2>Tires Rear (RL / RR)</h2>
+                <canvas id="tiresRearHistory"></canvas>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        /* =========================================================================
+           Configuration
+           ========================================================================= */
+        const MAX_POINTS = 120;           // points kept in live charts (configurable)
+        const SMOOTH_TENSION = 0.25;      // curved lines
+        const REFRESH_MS = 150;           // fallback simulation rate (if needed)
+
+        /* =========================================================================
+           SignalR connection (kept as you had it)
+           ========================================================================= */
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/hubs/telemetry")
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+
+        // normalize incoming payloads (robust to key casing / missing values)
+        function normalizeTelemetry(raw) {
+            const get = (a, b, c) => {
+                const v = raw?.[a] ?? raw?.[b] ?? raw?.[c];
+                if (v == null) return 0;
+                const n = typeof v === 'number' ? v : Number(v);
+                return Number.isNaN(n) ? 0 : n;
+            };
+
+            return {
+                speedKmh: get("speedKmh", "SpeedKmh", "speed"),
+                rpm: get("rpm", "Rpm"),
+                gear: raw?.gear ?? raw?.Gear ?? 0,
+                throttle: get("throttle", "Throttle"),   // expected 0..1
+                brake: get("brake", "Brake"),            // expected 0..1
+                fuelRemainingKg: get("fuelRemainingKg", "FuelRemainingKg", "fuelRemainingKg"),
+                drsActive: raw?.drsActive ?? raw?.DrsActive ?? false,
+                tireTempFL: get("tireTempFL", "TireTempFL", "tireTempFL"),
+                tireTempFR: get("tireTempFR", "TireTempFR", "tireTempFR"),
+                tireTempRL: get("tireTempRL", "TireTempRL", "tireTempRL"),
+                tireTempRR: get("tireTempRR", "TireTempRR", "tireTempRR"),
+                timestamp: raw?.timestamp ?? new Date().toISOString()
+            };
+        }
+
+        connection.on("TelemetryReceived", raw => {
+            const d = normalizeTelemetry(raw);
+            updateUI(d);
+            pushLiveData(d);
+            pushHistoryBuffers(d);
+        });
+
+        async function startConnection() {
+            try {
+                await connection.start();
+                console.info("SignalR connected");
+            } catch (err) {
+                console.warn("SignalR start failed, retrying...", err);
+                setTimeout(startConnection, 2000);
+            }
+        }
+        startConnection();
+
+        /* =========================================================================
+           DOM update (numbers)
+           ========================================================================= */
+        function updateUI(d) {
+            document.getElementById("speed").textContent = `${Math.round(d.speedKmh)} km/h`;
+            document.getElementById("rpm").textContent = `${Math.round(d.rpm)}`;
+            document.getElementById("gear").textContent = (d.gear === 0 || d.gear === "0") ? "N" : String(d.gear);
+            document.getElementById("throttle").textContent = `${Math.round(d.throttle * 100)}%`;
+            document.getElementById("brake").textContent = `${Math.round(d.brake * 100)}%`;
+            document.getElementById("fuel").textContent = `${Number(d.fuelRemainingKg).toFixed(1)} kg`;
+            document.getElementById("drs").textContent = `DRS: ${d.drsActive ? "ON" : "OFF"}`;
+
+            // tire temps (keep numbers)
+            const setT = (id, value) => document.getElementById(id).textContent = `${Math.round(value)}°C`;
+            if (document.getElementById("tfl")) setT("tfl", d.tireTempFL);
+            if (document.getElementById("tfr")) setT("tfr", d.tireTempFR);
+            if (document.getElementById("trl")) setT("trl", d.tireTempRL);
+            if (document.getElementById("trr")) setT("trr", d.tireTempRR);
+        }
+
+        /* =========================================================================
+           Chart.js helpers
+           ========================================================================= */
+        function createLineChart(ctx, label, color, options = {}) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label,
+                        data: [],
+                        borderColor: color,
+                        backgroundColor: hexToRgba(color, 0.06),
+                        borderWidth: 2,
+                        tension: SMOOTH_TENSION,
+                        pointRadius: 0,
+                        fill: true,
+                        hoverRadius: 3,
+                        cubicInterpolationMode: 'monotone'
+                    }]
+                },
+                options: {
+                    animation: { duration: 400 },
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#cbd5df', maxTicksLimit: 6 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, labels: { color: '#e6eef3' } },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    ...options
+                }
+            });
+        }
+
+        function createDualLineChart(ctx, labelA, colorA, labelB, colorB, options = {}) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: labelA,
+                            data: [],
+                            borderColor: colorA,
+                            backgroundColor: hexToRgba(colorA, 0.06),
+                            borderWidth: 2,
+                            tension: SMOOTH_TENSION,
+                            pointRadius: 0,
+                            fill: false,
+                            cubicInterpolationMode: 'monotone'
+                        },
+                        {
+                            label: labelB,
+                            data: [],
+                            borderColor: colorB,
+                            backgroundColor: hexToRgba(colorB, 0.06),
+                            borderWidth: 2,
+                            tension: SMOOTH_TENSION,
+                            pointRadius: 0,
+                            fill: false,
+                            cubicInterpolationMode: 'monotone'
+                        }
+                    ]
+                },
+                options: {
+                    animation: { duration: 400 },
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    scales: {
+                        x: { display: false },
+                        y: { beginAtZero: true, ticks: { color: '#cbd5df', maxTicksLimit: 6 } }
+                    },
+                    plugins: {
+                        legend: { display: true, labels: { color: '#e6eef3' } },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    ...options
+                }
+            });
+        }
+
+        function pushPoint(chart, label, value, maxPoints = MAX_POINTS) {
+            chart.data.labels.push(label);
+            chart.data.datasets.forEach((ds, i) => {
+                // only push if dataset value provided by caller via a value array
+                // caller will push exact values via chart.data.datasets[i].data.push(...)
+            });
+
+            // caller should push to specific datasets before calling update
+            while (chart.data.labels.length > maxPoints) {
+                chart.data.labels.shift();
+                chart.data.datasets.forEach(ds => ds.data.shift());
+            }
+            chart.update('none'); // lightweight update
+        }
+
+        function hexToRgba(hex, alpha = 1) {
+            const h = hex.replace('#', '');
+            const bigint = parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16);
+            const r = (bigint >> 16) & 255;
+            const g = (bigint >> 8) & 255;
+            const b = bigint & 255;
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        /* =========================================================================
+           Create charts (main + history)
+           ========================================================================= */
+        const speedChart = createLineChart(document.getElementById('speedChart'), 'Speed (km/h)', '#00e6ff', {
+            scales: { y: { suggestedMax: 360 } }
+        });
+
+        const rpmChart = createLineChart(document.getElementById('rpmChart'), 'RPM', '#ff3b3b', {
+            scales: { y: { suggestedMax: 16000 } }
+        });
+
+        const tbChart = createDualLineChart(
+            document.getElementById('tbChart'),
+            'Throttle %', '#16ff5d',
+            'Brake %', '#ff2e2e',
+            { scales: { y: { suggestedMax: 100 } } }
+        );
+
+        // small history charts
+        const speedHistory = createLineChart(document.getElementById('speedHistory'), 'Speed History', '#00d1ff');
+        const throttleHistory = createLineChart(document.getElementById('throttleHistory'), 'Throttle History', '#16ff5d');
+        const brakeHistory = createLineChart(document.getElementById('brakeHistory'), 'Brake History', '#ff2e2e');
+        const fuelHistory = createLineChart(document.getElementById('fuelHistory'), 'Fuel History', '#4aa3ff');
+        const tiresFrontHistory = createLineChart(document.getElementById('tiresFrontHistory'), 'Tires Front', '#b06cff');
+        const tiresRearHistory = createLineChart(document.getElementById('tiresRearHistory'), 'Tires Rear', '#ff9ec2');
+
+        /* =========================================================================
+           Live buffers + push helpers
+           ========================================================================= */
+        function pushLiveData(d) {
+            const label = new Date(d.timestamp).toLocaleTimeString();
+
+            // MAIN charts: push label and dataset values
+            // Speed chart (single dataset)
+            speedChart.data.labels.push(label);
+            speedChart.data.datasets[0].data.push(Math.round(d.speedKmh));
+
+            // RPM
+            rpmChart.data.labels.push(label);
+            rpmChart.data.datasets[0].data.push(Math.round(d.rpm));
+
+            // Throttle/Brake (convert to percent)
+            tbChart.data.labels.push(label);
+            tbChart.data.datasets[0].data.push(Math.round(d.throttle * 100));
+            tbChart.data.datasets[1].data.push(Math.round(d.brake * 100));
+
+            // keep length under MAX_POINTS
+            [speedChart, rpmChart, tbChart].forEach(c => {
+                while (c.data.labels.length > MAX_POINTS) {
+                    c.data.labels.shift();
+                    c.data.datasets.forEach(ds => ds.data.shift());
+                }
+                c.update(); // animated update
+            });
+        }
+
+        // history buffers (keeps longer running history charts)
+        function pushHistoryBuffers(d) {
+            const label = new Date(d.timestamp).toLocaleTimeString();
+
+            speedHistory.data.labels.push(label); speedHistory.data.datasets[0].data.push(Math.round(d.speedKmh));
+            throttleHistory.data.labels.push(label); throttleHistory.data.datasets[0].data.push(Math.round(d.throttle * 100));
+            brakeHistory.data.labels.push(label); brakeHistory.data.datasets[0].data.push(Math.round(d.brake * 100));
+            fuelHistory.data.labels.push(label); fuelHistory.data.datasets[0].data.push(Number(d.fuelRemainingKg).toFixed(2));
+            tiresFrontHistory.data.labels.push(label); tiresFrontHistory.data.datasets[0].data.push(Math.round((d.tireTempFL + d.tireTempFR) / 2));
+            tiresRearHistory.data.labels.push(label); tiresRearHistory.data.datasets[0].data.push(Math.round((d.tireTempRL + d.tireTempRR) / 2));
+
+            // cap history length (larger than main)
+            const HISTORY_LIMIT = 400;
+            [speedHistory, throttleHistory, brakeHistory, fuelHistory, tiresFrontHistory, tiresRearHistory].forEach(c => {
+                while (c.data.labels.length > HISTORY_LIMIT) {
+                    c.data.labels.shift();
+                    c.data.datasets.forEach(ds => ds.data.shift());
+                }
+                // light update without resetting animation
+                c.update('none');
+            });
+        }
+
+        /* =========================================================================
+           Load history button (calls your existing API and populates history charts)
+           ========================================================================= */
+        document.getElementById('btnLoadHistory').addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/telemetryhistory/latest/200');
+                if (!res.ok) throw new Error('history request failed');
+                const data = await res.json();
+
+                // reset charts
+                [speedHistory, throttleHistory, brakeHistory, fuelHistory, tiresFrontHistory, tiresRearHistory].forEach(c => {
+                    c.data.labels = [];
+                    c.data.datasets.forEach(ds => ds.data = []);
+                });
+
+                data.forEach(d => {
+                    const ts = new Date(d.timestamp).toLocaleTimeString();
+
+                    speedHistory.data.labels.push(ts); speedHistory.data.datasets[0].data.push(Math.round(d.speed ?? d.speedKmh ?? 0));
+                    throttleHistory.data.labels.push(ts); throttleHistory.data.datasets[0].data.push(Math.round((d.throttle ?? 0) * 100));
+                    brakeHistory.data.labels.push(ts); brakeHistory.data.datasets[0].data.push(Math.round((d.brake ?? 0) * 100));
+                    fuelHistory.data.labels.push(ts); fuelHistory.data.datasets[0].data.push(Number(d.fuel ?? d.fuelRemainingKg ?? 0).toFixed(2));
+                    tiresFrontHistory.data.labels.push(ts); tiresFrontHistory.data.datasets[0].data.push(Math.round(((d.tireFL ?? 0) + (d.tireFR ?? 0)) / 2));
+                    tiresRearHistory.data.labels.push(ts); tiresRearHistory.data.datasets[0].data.push(Math.round(((d.tireRL ?? 0) + (d.tireRR ?? 0)) / 2));
+                });
+
+                [speedHistory, throttleHistory, brakeHistory, fuelHistory, tiresFrontHistory, tiresRearHistory].forEach(c => c.update());
+            } catch (err) {
+                console.error('Failed to load history:', err);
+                alert('Failed to load history (see console).');
+            }
+        });
+    </script>
+</body>
+</html>
